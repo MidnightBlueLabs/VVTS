@@ -1,0 +1,52 @@
+(*
+ * Localnet state machine definition
+ * Our target falls within the local subnet range.
+ * i.e. the IP addresses we hand out are within a public range.
+ * We abuse the fact that most vpn clients allow local subnet traffic to flow directly.
+ *)
+
+state init begin:
+  miscnet = miscnet();
+  netmask = "255.255.255.0";
+  (* we want target_ip to flow outside of the tunnel *)
+  target_ip = miscnet.lookup_ipv4("vvts.midnightblue.nl");
+  (* select an ip within the same subnet but not equal to target_ip *)
+  my_ip = miscnet.subnet_ip(target_ip, netmask);
+  (* perform nat on the interface where our default gateway is at *)
+  miscnet.masquerade("true");
+
+  ap = accesspoint();
+  ap.wifi_interface = "wlan0";
+  ap.ipv4_addr = my_ip;
+  ap.ipv4_netmask = netmask;
+  ap.dhcp4_enable = "true";
+  (* don't hand out target_ip to one of our clients *)
+  ap.dhcp4_avoid = target_ip;
+  ap.dhcp4_dns = my_ip;
+  ap.dhcp4_router = my_ip;
+  (* route all the traffic within target_ip/24 to our default gateway *)
+  ap.route_to_default = "true";
+  ap.dns_enable = "true";
+  (* ap.dns_set_override("vvts.midnightblue.nl", target_ip); *)
+  ap.bring_up(ap_up, ap_err);
+
+state ap_err:
+  exit("failed to bring up access point: ", errstr);
+
+state ap_up:
+  mon = trafficmonitor();
+  mon.interface = ap.ap_interface;
+  (* make sure validation_server resolves to target_ip *)
+  mon.validation_server = "https://vvts.midnightblue.nl:8443/";
+  (* specify vpn endpoints so that the monitor can detect whether vpn traffic occurs *)
+  mon.vpn_endpoints = "tcp://eduvpn.org:443;udp://eduvpn.org:443;tcp://www.eduvpn.org:443;udp://www.eduvpn.org:443";
+  mon.detect_attack(vpn_safe, vpn_vuln, mon_err);
+
+state mon_err:
+  exit("Error occurred: ", errstr);
+
+state vpn_safe:
+  exit("Your vpn appears to be safe, congratulations!");
+
+state vpn_vuln:
+  exit("Your vpn appears to be vulnerable!");

