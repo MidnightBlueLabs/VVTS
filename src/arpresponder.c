@@ -166,7 +166,13 @@ static int unblock_arp(int hSocket) {
     if (ntohs(stRequest.arp_op) == ARPOP_REQUEST) {
         inet_ntop(AF_INET, stRequest.arp_tpa, szTargetIp, sizeof(szTargetIp));
         inet_ntop(AF_INET, stRequest.arp_spa, szSourceIp, sizeof(szSourceIp));
-        fprintf_flush(stderr, "Who has %s? Tell %s\n", szTargetIp, szSourceIp);
+        if (dwSourceIp == 0) {
+            fprintf_flush(stderr, "Who has %s? (ARP Probe)\n", szTargetIp);
+        } else if (dwSourceIp == dwTargetIp) {
+            fprintf_flush(stderr, "ARP Announcement for %s\n", szTargetIp);
+        } else {
+            fprintf_flush(stderr, "Who has %s? Tell %s\n", szTargetIp, szSourceIp);
+        }
     } else if (ntohs(stRequest.arp_op) == ARPOP_REPLY) {
         inet_ntop(AF_INET, stRequest.arp_spa, szSourceIp, sizeof(szSourceIp));
         snprintf(szSourceMac, sizeof(szSourceMac), "%02x:%02x:%02x:%02x:%02x:%02x",
@@ -178,6 +184,12 @@ static int unblock_arp(int hSocket) {
     if (ntohs(stRequest.arp_op) == ARPOP_REQUEST) {
         /* check if packet was intended for us -- if so, the kernel will process it */
         if (dwSourceIp == stInterfaceInfo.dwIpAddr || dwTargetIp == stInterfaceInfo.dwIpAddr) {
+            goto _success;
+        } else if (dwSourceIp == 0) {
+            /* arp probe -- don't respond */
+            goto _success;
+        } else if (dwSourceIp == dwTargetIp) {
+            /* arp announcement -- don't respond */
             goto _success;
         }
         /* special socket address type used for AF_PACKET */
