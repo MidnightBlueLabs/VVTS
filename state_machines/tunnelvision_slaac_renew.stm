@@ -45,10 +45,10 @@ state mon_err:
 state vpn_detected:
   ap.slaac_static_route(target_ip, "120");
   ap.slaac_reload();
-  ap.slaac_renew(dhcp_renew);
+  ap.slaac_renew(slaac_renew);
   print("[i] Sending Router Advertisement...");
 
-state dhcp_renew:
+state slaac_renew:
   (* make sure validation_server resolves to target_ip *)
   mon.validation_server = "https://vvts.midnightblue.nl:8443/";
   mon.detect_attack(vpn_safe, vpn_vuln, mon_err);

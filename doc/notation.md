@@ -120,3 +120,5 @@ state ap_err:
   print("ap_err: ", errstr);
   exit();
 ```
+
+Furthermore, the `renew_addr` variable contains the (IPv4 or IPv6) address of a client renewing its DHCP lease or sending a IPv6 neighbor advertisement packet.

@@ -9,9 +9,11 @@ state init begin:
   miscnet = miscnet();
   netmask = "255.255.255.0";
   (* we want target_ip to flow outside of the tunnel *)
-  target_ip = miscnet.lookup_ipv4("vvts.midnightblue.nl");
+  (* target_ip = miscnet.lookup_ipv4("vvts.midnightblue.nl"); *)
+  target_ip = "82.165.202.191";
   (* select an ip within the same subnet but not equal to target_ip *)
-  my_ip = miscnet.subnet_ip(target_ip, netmask);
+  (* my_ip = miscnet.subnet_ip(target_ip, netmask); *)
+  my_ip = "82.165.202.1";
   (* perform nat on the interface where our default gateway is at *)
   miscnet.masquerade("true");
 
@@ -23,12 +25,13 @@ state init begin:
   (* don't hand out target_ip to one of our clients *)
   ap.dhcp4_avoid = target_ip;
   ap.dhcp4_dns = my_ip;
+  ap.dhcp4_netmask = "255.255.255.128";
   ap.dhcp4_router = my_ip;
+  ap.dhcp4_leasetime = "15";
   (* route all the traffic within target_ip/24 to our default gateway *)
   ap.route_to_default = "true";
   ap.dns_enable = "true";
-  (* override dns response -> make sure it consists of only an A record (IPv4) *)
-  ap.dns_set_override("vvts.midnightblue.nl", target_ip);
+  (* ap.dns_set_override("vvts.midnightblue.nl", target_ip); *)
   ap.bring_up(ap_up, ap_err);
 
 state ap_err:
@@ -44,12 +47,22 @@ state ap_up:
   endpoints = concat(endpoints, ";udp://ifi2-vpn.guest.eduvpn.no:1194");
   endpoints = concat(endpoints, ";udp://tekno-vpn.guest.eduvpn.no:1194");
   endpoints = concat(endpoints, ";udp://eduvpnga.ethernet.edu.et:1194");
-  endpoints = concat(endpoints, ";udp://eduvpn.ac.lk:1194");
   mon.vpn_endpoints = endpoints;
-  mon.detect_attack(vpn_safe, vpn_vuln, mon_err);
+  mon.detect_vpn(vpn_detected, mon_err);
 
 state mon_err:
   exit("Error occurred: ", errstr);
+
+state vpn_detected:
+  ap.dhcp4_netmask = "255.255.255.0";
+  ap.dhcp4_reload();
+  ap.dhcp4_renew(dhcp_renew);
+  print("[i] Waiting for the dhcp lease to renew...");
+
+state dhcp_renew:
+  (* make sure validation_server resolves to target_ip *)
+  mon.validation_server = "https://vvts.midnightblue.nl:8443/";
+  mon.detect_attack(vpn_safe, vpn_vuln, mon_err);
 
 state vpn_safe:
   exit("Your vpn appears to be safe, congratulations!");

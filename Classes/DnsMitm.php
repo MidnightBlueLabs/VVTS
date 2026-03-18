@@ -19,7 +19,6 @@ class DnsMitm extends Subscribable implements IUnblockable {
     var $aOverridesAAAA;
     var $dwBindAddr;
     var $abBindIpv6Addr;
-    var $bNat64Enabled;
 
     function __construct() {
         parent::__construct();
@@ -60,14 +59,20 @@ class DnsMitm extends Subscribable implements IUnblockable {
         return $szName;
     }
 
-    function ApplyOverrides(&$abRequest, $szPeer) {
+    function GenerateResponse(&$abRequest, $szPeer) {
         $wQdCount = (ord($abRequest[4]) << 8) | ord($abRequest[5]);
         $dwOffset = 12;
         $wFlags = (ord($abRequest[2]) << 8) | ord($abRequest[3]);
         $wOffsetCorrect = 0;
         $wAdCount = (ord($abRequest[6]) << 8) | ord($abRequest[7]);
 
+        $bIsARequested = false;
+        $bIsAAAARequested = false;
+        $szDomainName = null;
+        $dwDomainNameOffset = null;
+
         for ($i = 0; $i < $wQdCount; $i++) {
+            $dwOffsetPreDomainName = $dwOffset;
             $szName = self::ParseDomainName($abRequest, $dwOffset);
             $wType = (ord($abRequest[$dwOffset]) << 8) | ord($abRequest[$dwOffset+1]);
             $dwOffset += 2;
@@ -75,62 +80,69 @@ class DnsMitm extends Subscribable implements IUnblockable {
             $dwOffset += 2;
 
             // printf ("[i] received DNS %s from %s for %s type=%s class=%s\n", ($wFlags & 0x8000) ? "response" : "request", $szPeer, $szName, ($wType == 1) ? "A" : "unknown", ($wClass == 1) ? "IN" : "unknown");
-        }
 
-        if (!($wFlags & 0x8000)) {
-            return;
-        }
-
-        for ($i = 0; $i < $wAdCount; $i++) {
-            $szName = self::ParseDomainName($abRequest, $dwOffset);
-            $wType = (ord($abRequest[$dwOffset]) << 8) | ord($abRequest[$dwOffset+1]);
-            $dwOffset += 2;
-            $wClass = (ord($abRequest[$dwOffset]) << 8) | ord($abRequest[$dwOffset+1]);
-            $dwOffset += 2;
-            /* TTL */
-            $dwOffset += 4;
-            $wDataLength = (ord($abRequest[$dwOffset]) << 8) | ord($abRequest[$dwOffset+1]);
-            $dwOffset += 2;
-            $dwOffset += $wDataLength;
-
-            if ((
-                isset($this->aOverridesA[strtolower($szName)]) || 
-                isset($this->aOverridesAAAA[strtolower($szName)])
-            ) && $wType == 5) {
-                /* CNAME record -> add result to override list */
-                $dwTmpOffset = $dwOffset - $wDataLength;
-                $szCname = self::ParseDomainName($abRequest, $dwTmpOffset);
-                if (isset($this->aOverridesA[strtolower($szName)])) {
-                    $this->aOverridesA[strtolower($szCname)] = $this->aOverridesA[strtolower($szName)];
-                }
-                if (isset($this->aOverridesAAAA[strtolower($szName)])) {
-                    $this->aOverridesAAAA[strtolower($szCname)] = $this->aOverridesAAAA[strtolower($szName)];
-                }
+            if ($wType !== 1 && $wType !== 28) {
+                continue;
             }
 
-            if (isset($this->aOverridesA[strtolower($szName)]) && $wType == 1 && $wDataLength == 4) {
-                $szOverride = $this->aOverridesA[strtolower($szName)];
-                $dwOriginal = (ord($abRequest[$dwOffset - 4]) << 24) | (ord($abRequest[$dwOffset - 3]) << 16) | (ord($abRequest[$dwOffset - 2]) << 8) | ord($abRequest[$dwOffset - 1]);
-                $szOriginal = MiscNet::DwordToIpv4String($dwOriginal);
-                printf("[i] applying DNS response override for %s: %s -> %s\n", $szName, $szOriginal, $szOverride);
-                $dwOverride = MiscNet::Ipv4StringToDword($szOverride);
-                $abOverride = chr($dwOverride >> 24) . chr($dwOverride >> 16) . chr($dwOverride >> 8) . chr($dwOverride);
-                $abRequest = substr($abRequest, 0, $dwOffset - 4) . $abOverride . substr($abRequest, $dwOffset);
+            if ($szDomainName !== null && $szName !== $szDomainName) {
+                printf("[!] received single DNS query for both %s and %s from %s -- not supported\n", $szDomainName, $szName, $szPeer);
+                return null;
             }
-            if ((
-                isset($this->aOverridesAAAA[strtolower($szName)]) ||
-                ($this->bNat64Enabled && isset($this->aOverridesA[strtolower($szName)]))
-            ) && $wType == 28 && $wDataLength == 16) {
-                $szOverride = isset($this->aOverridesAAAA[strtolower($szName)]) ?
-                    $this->aOverridesAAAA[strtolower($szName)] :
-                    MiscNet::BinaryToIPv6String(MiscNet::Ipv4ToNat64(MiscNet::Ipv4StringToDword($this->aOverridesA[strtolower($szName)])));
-                $abOriginal = substr($abRequest, $dwOffset - 16, 16);
-                $szOriginal = MiscNet::BinaryToIpv6String($abOriginal);
-                printf("[i] applying DNS response override for %s: %s -> %s\n", $szName, $szOriginal, $szOverride);
-                $abOverride = MiscNet::Ipv6StringToBinary($szOverride);
-                $abRequest = substr($abRequest, 0, $dwOffset - 16) . $abOverride . substr($abRequest, $dwOffset);
+            $szDomainName = $szName;
+            $dwDomainNameOffset = $dwOffsetPreDomainName;
+            if ($wType === 1 && isset($this->aOverridesA[strtolower($szName)])) {
+                $bIsARequested = true;
+            } else if ($wType === 28 && isset($this->aOverridesAAAA[strtolower($szName)])) {
+                $bIsAAAARequested = true;
             }
         }
+
+        if ($szDomainName === null || $wFlags & 0x8000 || (
+            !isset($this->aOverridesA[strtolower($szDomainName)]) &&
+            !isset($this->aOverridesAAAA[strtolower($szDomainName)])
+        )) {
+            /* no overrides set for this domain -> pass through to real DNS server */
+            return null;
+        }
+
+        $wResponseFlags = $wFlags | 0x8080; /* 0x8000 -> is dns response, 0x80 -> recursion supported */
+
+        $abResponse = substr($abRequest, 0, 2); /* transaction id */
+        $abResponse .= chr($wResponseFlags >> 8) . chr($wResponseFlags); /* flags */
+        $abResponse .= substr($abRequest, 4, 2); /* number of queries */
+        $abResponse .= "\x00" . chr($bIsAAAARequested + $bIsARequested); /* number of answers */
+        $abResponse .= "\x00\x00"; /* number of authority RRs */
+        $abResponse .= "\x00\x00"; /* number of additional RRs */
+        $abResponse .= substr($abRequest, 12, $dwOffset - 12);
+        
+        if ($bIsARequested) {
+            $szOverride = $this->aOverridesA[strtolower($szDomainName)];
+            printf("[i] applying DNS response override for %s: %s\n", $szDomainName, $szOverride);
+            $dwOverride = MiscNet::Ipv4StringToDword($szOverride);
+            $abOverride = chr($dwOverride >> 24) . chr($dwOverride >> 16) . chr($dwOverride >> 8) . chr($dwOverride);
+
+            $abResponse .= "\xc0" . chr($dwDomainNameOffset); /* refer to domain name in query */
+            $abResponse .= "\x00\x01"; /* type: A */
+            $abResponse .= "\x00\x01"; /* class: IN */
+            $abResponse .= "\x00\x00\x0e\x10"; /* TTL: 3600s */
+            $abResponse .= "\x00\x04"; /* data len: 4 */
+            $abResponse .= $abOverride;
+        }
+        if ($bIsAAAARequested) {
+            $szOverride = $this->aOverridesAAAA[strtolower($szDomainName)];
+            printf("[i] applying DNS response override for %s: %s\n", $szDomainName, $szOverride);
+            $abOverride = MiscNet::Ipv6StringToBinary($szOverride);
+
+            $abResponse .= "\xc0" . chr($dwDomainNameOffset); /* refer to domain name in query */
+            $abResponse .= "\x00\x1c"; /* type: AAAA */
+            $abResponse .= "\x00\x01"; /* class: IN */
+            $abResponse .= "\x00\x00\x0e\x10"; /* TTL: 3600s */
+            $abResponse .= "\x00\x10"; /* data len: 16 */
+            $abResponse .= $abOverride;
+        }
+
+        return $abResponse;
     }
 
     function SetOverride($szDomainName, $szAddress) {
@@ -212,12 +224,16 @@ class DnsMitm extends Subscribable implements IUnblockable {
 
         if ($hSocket === $this->hListeningSocket || $hSocket === $this->hListeningIpv6Socket) {
             // printf("[i] incoming dns request\n");
-            $this->ApplyOverrides($abBuf, $szPeer);
-            $this->aTransactionMap[$wTransactionId] = new DnsTransactionMapEntry($hSocket, $szPeer, intval(microtime(1) * 1000) + 10000);
-            stream_socket_sendto($this->hClientSocket, $abBuf, 0, $this->szNextDns . ":53");
+            $abResponse = $this->GenerateResponse($abBuf, $szPeer);
+            if ($abResponse !== null) {
+                stream_socket_sendto($hSocket, $abResponse, 0, $szPeer);
+            } else {
+                /* forward DNS query */
+                $this->aTransactionMap[$wTransactionId] = new DnsTransactionMapEntry($hSocket, $szPeer, intval(microtime(1) * 1000) + 10000);
+                stream_socket_sendto($this->hClientSocket, $abBuf, 0, $this->szNextDns . ":53");
+            }
         } else {
             // printf("[i] incoming dns response\n");
-            $this->ApplyOverrides($abBuf, $szPeer);
             if (!isset($this->aTransactionMap[$wTransactionId])) {
                 printf("[-] incoming DNS response with unknown source\n");
             } else {

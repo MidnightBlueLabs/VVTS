@@ -1,0 +1,51 @@
+diff -rupN a/process.c b/process.c
+--- a/process.c	2024-12-30 18:38:47.000000000 +0100
++++ b/process.c	2026-03-11 15:27:28.893915625 +0100
+@@ -50,7 +50,7 @@ void process(int sock, struct Interface
+ 
+ 	struct icmp6_hdr *icmph = (struct icmp6_hdr *)msg;
+ 
+-	if (icmph->icmp6_type != ND_ROUTER_SOLICIT && icmph->icmp6_type != ND_ROUTER_ADVERT) {
++	if (icmph->icmp6_type != ND_ROUTER_SOLICIT && icmph->icmp6_type != ND_ROUTER_ADVERT && icmph->icmp6_type != ND_NEIGHBOR_ADVERT) {
+ 		/*
+ 		 *      We just want to listen to RSs and RAs
+ 		 */
+@@ -81,6 +81,14 @@ void process(int sock, struct Interface
+ 		}
+ 	}
+ 
++	if (icmph->icmp6_type == ND_NEIGHBOR_ADVERT) {
++		if (len < sizeof(struct nd_neighbor_advert)) {
++			flog(LOG_WARNING, "%s received icmpv6 NA packet with invalid length (%d) from %s", if_name, len,
++			     addr_str);
++			return;
++		}
++	}
++
+ 	if (icmph->icmp6_code != 0) {
+ 		flog(LOG_WARNING, "%s received icmpv6 RS/RA packet with invalid code (%d) from %s", if_name, icmph->icmp6_code,
+ 		     addr_str);
+@@ -117,6 +125,12 @@ void process(int sock, struct Interface
+ 			dlog(LOG_DEBUG, 3, "%s received RA from: %s", if_name, addr_str);
+ 		}
+ 		process_ra(iface, msg, len, addr);
++	} else if (icmph->icmp6_type == ND_NEIGHBOR_ADVERT) {
++		if (0 == memcmp(&addr->sin6_addr, &iface->props.if_addr, sizeof(iface->props.if_addr))) {
++			dlog(LOG_DEBUG, 3, "%s received NA from: %s (myself)", if_name, addr_str);
++		} else {
++			dlog(LOG_DEBUG, 3, "%s received NA from: %s", if_name, addr_str);
++		}
+ 	}
+ }
+ 
+diff -rupN a/socket.c b/socket.c
+--- a/socket.c	2024-12-28 06:27:47.000000000 +0100
++++ b/socket.c	2026-03-11 15:23:09.228013236 +0100
+@@ -87,6 +87,7 @@ int open_icmpv6_socket(void)
+ 	ICMP6_FILTER_SETBLOCKALL(&filter);
+ 	ICMP6_FILTER_SETPASS(ND_ROUTER_SOLICIT, &filter);
+ 	ICMP6_FILTER_SETPASS(ND_ROUTER_ADVERT, &filter);
++	ICMP6_FILTER_SETPASS(ND_NEIGHBOR_ADVERT, &filter);
+ 
+ 	err = setsockopt(sock, IPPROTO_ICMPV6, ICMP6_FILTER, &filter, sizeof(filter));
+ 	if (err < 0) {

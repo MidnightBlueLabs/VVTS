@@ -276,8 +276,8 @@ static int is_within_subnet(struct in6_addr *lpAddrA, struct in6_addr *lpAddrB, 
         }
         if (i == (dwPrefixLen >> 3)) {
             if (
-                (((uint8_t *)lpAddrA)[i] & (0xff00 >> (dwPrefixLen >> 7))) !=
-                (((uint8_t *)lpAddrB)[i] & (0xff00 >> (dwPrefixLen >> 7)))
+                (((uint8_t *)lpAddrA)[i] & (0xff00 >> (dwPrefixLen & 7))) !=
+                (((uint8_t *)lpAddrB)[i] & (0xff00 >> (dwPrefixLen & 7)))
             ) {
                 return 0;
             }
@@ -484,6 +484,7 @@ int main(int argc, char *argv[]) {
     scheduled_packet_t **lpCursor, *lpDelete;
     neighbor_packet_t *lpPacket;
     struct in6_addr abZeroAddr;
+    struct packet_mreq stMreq;
 
     if (argc < 2) {
         fprintf_flush(stderr, "[i] usage: %s <interface>\n", argv[0]);
@@ -511,6 +512,11 @@ int main(int argc, char *argv[]) {
             fprintf_flush(stderr, "[-] unable to bind raw socket: %s\n", strerror(errno));
             goto _error;
         }
+
+        memset(&stMreq, 0, sizeof(struct packet_mreq));
+        stMreq.mr_ifindex = stInterfaceInfo.dwIfIndex;
+        stMreq.mr_type = PACKET_MR_PROMISC;
+        setsockopt(hSocket, SOL_PACKET, PACKET_ADD_MEMBERSHIP, &stMreq, sizeof(struct packet_mreq));
     }
     memset(&abZeroAddr, 0, sizeof(struct in6_addr));
     if (memcmp(&abZeroAddr, &stInterfaceInfo.abIpv6Addr, sizeof(struct in6_addr)) != 0) {
@@ -529,6 +535,11 @@ int main(int argc, char *argv[]) {
             fprintf_flush(stderr, "[-] unable to bind raw socket: %s\n", strerror(errno));
             goto _error;
         }
+
+        memset(&stMreq, 0, sizeof(struct packet_mreq));
+        stMreq.mr_ifindex = stInterfaceInfo.dwIfIndex;
+        stMreq.mr_type = PACKET_MR_PROMISC;
+        setsockopt(hSocketIpv6, SOL_PACKET, PACKET_ADD_MEMBERSHIP, &stMreq, sizeof(struct packet_mreq));
     }
 
     if (hSocket == -1 && hSocketIpv6 == -1) {

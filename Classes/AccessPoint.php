@@ -53,12 +53,14 @@ class AccessPoint implements IUnblockable, IScriptOpaque {
     var $dwDhcp4LeaseTime;
     var $szDhcp4Domain;
     var $aDhcp4StaticRoutes;
+    var $dwDhcp4Netmask;
 
     var $bSlaacEnable;
     var $abSlaacDns;
     var $dwSlaacLifetime;
     var $szSlaacDomain;
     var $aSlaacStaticRoutes;
+    var $aabSlaacNeighbors;
 
     var $bRouteToDefault;
     var $bNat64Enable;
@@ -76,6 +78,7 @@ class AccessPoint implements IUnblockable, IScriptOpaque {
         $this->aPerClientRoutes = [];
         $this->aDhcp4StaticRoutes = [];
         $this->aSlaacStaticRoutes = [];
+        $this->aabSlaacNeighbors = [];
         $this->aTransitions = [];
 
         MainLoop::GetInstance()->RegisterObject($this);
@@ -118,6 +121,7 @@ class AccessPoint implements IUnblockable, IScriptOpaque {
             }
         }
         $this->aPerClientRoutes = [];
+        $this->aabSlaacNeighbors = [];
     }
 
     function PerformTransition($szWhich) {
@@ -157,6 +161,7 @@ class AccessPoint implements IUnblockable, IScriptOpaque {
                 foreach($this->aDhcp4StaticRoutes as $oRoute) {
                     $this->oDhcp4->SetStaticRoute($oRoute->dwAddress, $oRoute->dwNetmask, $oRoute->dwGateway);
                 }
+                $this->oDhcp4->dwNetmask = $this->dwDhcp4Netmask;
                 $this->oDhcp4->Subscribe("dhcp4_up", $this, "Stage2_OnDhcp4Up", null, true);
                 $this->oDhcp4->Subscribe("dhcp4_err", $this, "Stage2_OnDhcp4Err", null, true);
                 $this->oDhcp4->Subscribe("dhcp4_client_connected", $this, "OnIpv4ClientConnected", null, false);
@@ -494,19 +499,31 @@ _error:
         $this->PerformTransition("error");
     }
 
-    function OnIpv4ClientConnected($dwIpv4Address) {
+    function OnIpv4ClientConnected($szIpv4Address) {
+        ScriptEngine::GetInstance()->SetString("renew_addr", $szIpv4Address);
         $this->PerformTransition("dhcp4_renew");
     }
 
-    function OnSlaacRenew() {
+    function OnSlaacRenew($szIpv6Address) {
+        $abIpv6Address = MiscNet::Ipv6StringToBinary($szIpv6Address);
+        if (!in_array($abIpv6Address, $this->aabSlaacNeighbors, true)) {
+            array_push($this->aabSlaacNeighbors, $abIpv6Address);
+        }
+        ScriptEngine::GetInstance()->SetString("renew_addr", $szIpv6Address);
         $this->PerformTransition("slaac_renew");
+    }
+
+    function OnSlaacRenewAll() {
+        foreach($this->aabSlaacNeighbors as $abNeighbor) {
+            $this->OnSlaacRenew($abNeighbor);
+        }
     }
 
     function OnPeerIsUp($szIpAddress) {
         /*
          * routing the subnet towards default causes packets destined for our clients
          * to be sent towards our default gateway (e.g. responses are bounced back on the wan interface).
-         * to fix that, we add a route entry table for each client know to exist.
+         * to fix that, we add a route table entry for each client know to exist.
          * in case we are not routing the subnet towards the default, there's no need to do anything
          */
         if (!$this->bRouteToDefault) {
@@ -784,6 +801,27 @@ _error:
         return new ScriptVoid();
     }
 
+    function StateMachineSet_dhcp4_netmask($oValue) {
+        if (!($oValue instanceof ScriptStringLiteral)) {
+            throw new ScriptInvokeError("dhcp4_netmask must be of type string");
+        }
+
+        if ($oValue->szLiteral === "") {
+            $this->dwDhcp4Netmask = null;
+        } else if (($dwDhcp4Netmask = MiscNet::Ipv4StringToDword($oValue->szLiteral)) === false) {
+            throw new ScriptInvokeError("invalid ipv4 address: " . $oValue->szLiteral);
+        } else {
+            for($bOn = 0, $i = 0; $i < 32; $i++) {
+                if ($dwDhcp4Netmask & (1 << $i)) {
+                    if (!$bOn) { $bOn = 1; }
+                } else {
+                    if ($bOn) { throw new ScriptInvokeError("Invalid IPv4 netmask"); }
+                }
+            }
+            $this->dwDhcp4Netmask = $dwDhcp4Netmask;
+        }
+    }
+
     function StateMachineInvoke_dhcp4_reload(...$aArguments) {
         if (count($aArguments) != 0) {
             throw new ScriptInvokeError("dhcp4_reload requires no arguments");
@@ -810,6 +848,7 @@ _error:
         foreach($this->aDhcp4StaticRoutes as $oRoute) {
             $this->oDhcp4->SetStaticRoute($oRoute->dwAddress, $oRoute->dwNetmask, $oRoute->dwGateway);
         }
+        $this->oDhcp4->dwNetmask = $this->dwDhcp4Netmask;
         if (!$bEnabled) {
             $this->oDhcp4->BringUp();
         } else {
@@ -923,6 +962,7 @@ _end:
             goto _end;
         } else if (!$bEnabled && $this->bSlaacEnable) {
             $this->oSlaac = new SlaacAdvertiser();
+            $this->aabSlaacNeighbors = [];
             $this->oSlaac->Subscribe("slaac_renew", $this, "OnSlaacRenew", null, false);
         }
 
@@ -935,7 +975,11 @@ _end:
             $this->oSlaac->SetStaticRoute($oRoute->abAddress, $oRoute->dwPrefixLen);
         }
         $this->oSlaac->bNat64Enable = $this->bNat64Enable;
-        $this->oSlaac->Subscribe("slaac_up", $this, "OnSlaacRenew", null, true);
+        /*
+         * router advertisement is sent over multicast with no confirmation,
+         * so we assume all clients have renewed their routing information once the RA is sent out
+         */
+        $this->oSlaac->Subscribe("slaac_up", $this, "OnSlaacRenewAll", null, true);
         if (!$bEnabled) {
             $this->oSlaac->BringUp();
         } else {
@@ -978,7 +1022,7 @@ _end:
         }
 
         /* bNat64Enable is also used by slaac, so we reload it as well */
-        StateMachineInvoke_slaac_reload();
+        $this->StateMachineInvoke_slaac_reload();
 _end:
         return new ScriptVoid();
     }
@@ -989,9 +1033,6 @@ _end:
         }
 
         $this->bNat64Enable = trim(strtolower($oValue->szLiteral)) === "true" || intval(trim($oValue->szLiteral)) !== 0;
-        if ($this->oDnsMitm !== null) {
-            $this->oDnsMitm->bNat64Enable = $this->bNat64Enable;
-        }
     }
 
     function StateMachineSet_route_to_default($oValue) {
@@ -1026,6 +1067,47 @@ _end:
         }
 
         $this->bDnsEnable = trim(strtolower($oValue->szLiteral)) === "true" || intval(trim($oValue->szLiteral)) !== 0;
+    }
+
+    function StateMachineInvoke_deauth(...$aArguments) {
+        if (count($aArguments) != 1) {
+            throw new ScriptInvokeError("deauth requires an argument");
+        } else if (!($aArguments[0] instanceof ScriptStringLiteral)) {
+            throw new ScriptInvokeError("deauth requres a string argument");
+        }
+        $szDeauthTarget = $aArguments[0]->szLiteral;
+        $dwDeauthTarget = null;
+        $abDeauthTarget = null;
+        $szLowLevelAddr = null;
+
+        if (($dwDeauthTarget = MiscNet::Ipv4StringToDword($szDeauthTarget)) !== null) {
+            $szNeighborTable = shell_exec("ip -4 neighbor");
+        } else if (($abDeauthTarget = MiscNet::Ipv6StringToBinary($szDeauthTarget)) !== null) {
+            $szNeighborTable = shell_exec("ip -6 neighbor");
+        } else {
+            throw new ScriptInvokeError("Invalid IP address: " . $szDeauthTarget);
+        }
+
+        $aszNeighborTable = preg_split("/\r?\n/s", $szNeighborTable);
+        foreach($aszNeighborTable as $szNeighbor) {
+            list($szNeighborAddr, $szRest) = explode(" ", $szNeighbor, 2);
+            if (
+                ($dwDeauthTarget != null && MiscNet::Ipv4StringToDword($szNeighborAddr) === $dwDeauthTarget) ||
+                ($abDeauthTarget != null && MiscNet::Ipv6StringToBinary($szNeighborAddr) === $abNeighborTarget)
+            ) {
+                if (preg_match('/lladdr ([0-9a-f:]+)/', $szRest, $aMatchLowLevelAddr)) {
+                    $szLowLevelAddr = $aMatchLowLevelAddr[1];
+                    break;
+                }
+            }
+        }
+
+        if ($szLowLevelAddr === null) {
+            throw new ScriptInvokeError("Unable to determine mac address for IP address " . $szDeauthTarget);
+        }
+
+        shell_exec("hostapd_cli deauth " . escapeshellarg($szLowLevelAddr));
+        return new ScriptVoid();
     }
 
     function StateMachineInvoke_bring_up(...$aArguments) {

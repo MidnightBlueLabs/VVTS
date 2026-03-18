@@ -81,7 +81,7 @@ class Nat64 extends Subscribable implements IUnblockable {
         }
         printf("tayga: %s", $abBuf);
 
-        if (preg_match('/Loaded [0-9]+ dynamic maps from /', $abBuf, $aMatchTayga)) {
+        if (preg_match('/Loaded [0-9]+ dynamic map(?:s)? from /', $abBuf, $aMatchTayga)) {
             /* set ip addresses as exptected by tayga (it doesn't do this on its own) */
             shell_exec("ifconfig " . escapeshellarg($this->szNat64Interface) . " up 192.168.255.1 netmask 255.255.255.255");
             shell_exec("ip -6 addr add fd67:c166:c737:ea24::1 dev " . escapeshellarg($this->szNat64Interface));

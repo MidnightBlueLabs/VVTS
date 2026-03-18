@@ -287,7 +287,7 @@ class MiscNet implements IUnblockable, IScriptOpaque {
         }
 
         /* if it equals the input address -> increment by one */
-        if ($abReturnAddr === $abReturnAddr) {
+        if ($abReturnAddr === $abIpv6Addr) {
             for ($i = 15; $i >= 0; $i--) {
                 $bVal = ord($abReturnAddr[$i]) + 1;
                 $abReturnAddr[$i] = chr($bVal);
@@ -334,15 +334,23 @@ class MiscNet implements IUnblockable, IScriptOpaque {
 
     static function GetRouteTable() {
         $szShellExecOutput = shell_exec("ip route list");
+        $szShellDefaultRoute = preg_replace("/\s+/", " ", shell_exec("ip route get 0.0.0.1"));
+        $szShellExecOutput = "dflget " . $szShellDefaultRoute . "\n" . $szShellExecOutput;
+
         $aszShellExecOutput = preg_split("/\r?\n/s", $szShellExecOutput);
         $aOutput = [];
 
         foreach($aszShellExecOutput as $szLine) {
-            if (!preg_match('/^([0-9\.]+(?:\/[0-9])+|default)/m', $szLine, $aMatchSubnet)) {
+            if (!preg_match('/^(default|dflget|[0-9\.]+(?:\/[0-9]+)?)/m', $szLine, $aMatchSubnet)) {
                 continue;
             }
 
             if ($aMatchSubnet[1] === "default") {
+                // $dwSubnet = 0;
+                // $dwNetmask = 0;
+                // handled in dflget
+                continue;
+            } else if ($aMatchSubnet[1] === "dflget") {
                 $dwSubnet = 0;
                 $dwNetmask = 0;
             } else {
@@ -356,13 +364,15 @@ class MiscNet implements IUnblockable, IScriptOpaque {
                 }
             }
 
-            $dwVia = null;
-            if (preg_match('/via ([0-9\.]+)/', $szLine, $aMatchVia)) {
-                $dwVia = MiscNet::Ipv4StringToDword($aMatchVia[1]);
-            }
             $szDev = null;
             if (preg_match('/dev ([^\s]+)/', $szLine, $aMatchDev)) {
                 $szDev = $aMatchDev[1];
+            } else {
+                continue;
+            }
+            $dwVia = null;
+            if (preg_match('/via ([0-9\.]+)/', $szLine, $aMatchVia)) {
+                $dwVia = MiscNet::Ipv4StringToDword($aMatchVia[1]);
             }
             $dwSrc = null;
             if (preg_match('/src ([0-9\.]+)/', $szLine, $aMatchSrc)) {
@@ -390,15 +400,23 @@ class MiscNet implements IUnblockable, IScriptOpaque {
 
     static function GetRouteTableIpv6() {
         $szShellExecOutput = shell_exec("ip -6 route list");
+        $szShellDefaultRoute = preg_replace("/\s+/", " ", shell_exec("ip -6 route get ::"));
+        $szShellExecOutput = "dflget " . $szShellDefaultRoute . "\n" . $szShellExecOutput;
+
         $aszShellExecOutput = preg_split("/\r?\n/s", $szShellExecOutput);
         $aOutput = [];
 
         foreach($aszShellExecOutput as $szLine) {
-            if (!preg_match('/^([0-9a-f:]+(?:\/[0-9]+)|default)/m', $szLine, $aMatchSubnet)) {
+            if (!preg_match('/^(default|dflget|[0-9a-f:]+(?:\/[0-9]+)?)/m', $szLine, $aMatchSubnet)) {
                 continue;
             }
 
             if ($aMatchSubnet[1] === "default") {
+                // $abSubnet = str_repeat("\x00", 16);
+                // $dwPrefixLen = 0;
+                // handled in dflget
+                continue;
+            } else if ($aMatchSubnet[1] === "dflget") {
                 $abSubnet = str_repeat("\x00", 16);
                 $dwPrefixLen = 0;
             } else {
@@ -412,13 +430,15 @@ class MiscNet implements IUnblockable, IScriptOpaque {
                 }
             }
 
-            $abVia = null;
-            if (preg_match('/via ([0-9a-f:]+)/', $szLine, $aMatchVia)) {
-                $abVia = MiscNet::Ipv6StringToBinary($aMatchVia[1]);
-            }
             $szDev = null;
             if (preg_match('/dev ([^\s]+)/', $szLine, $aMatchDev)) {
                 $szDev = $aMatchDev[1];
+            } else {
+                continue;
+            }
+            $abVia = null;
+            if (preg_match('/via ([0-9a-f:]+)/', $szLine, $aMatchVia)) {
+                $abVia = MiscNet::Ipv6StringToBinary($aMatchVia[1]);
             }
             $abSrc = null;
             if (preg_match('/src ([0-9a-f:]+)/', $szLine, $aMatchSrc)) {
@@ -430,6 +450,18 @@ class MiscNet implements IUnblockable, IScriptOpaque {
         }
 
         return $aOutput;
+    }
+
+    static function GetDefaultRouteIpv6() {
+        $aRouteTable = MiscNet::GetRouteTableIpv6();
+
+        foreach($aRouteTable as $oRoute) {
+            if ($oRoute->abSubnet === str_repeat("\x00", 16) && $oRoute->dwPrefixLen === 0) {
+                return $oRoute;
+            }
+        }
+
+        return null;
     }
 
     static function AddRoute($dwAddr, $dwNetmask, $dwVia, $szDev) {
@@ -497,11 +529,7 @@ class MiscNet implements IUnblockable, IScriptOpaque {
         $bForwardEnabled = intval(@file_get_contents("/proc/sys/net/ipv4/ip_forward"));
         $bIpv6ForwardEnabled = intval(@file_get_contents("/proc/sys/net/ipv6/conf/all/forwarding"));
         $oDefaultRoute = MiscNet::GetDefaultRoute();
-        $szIpv6DefaultRoute = shell_exec("ip -6 route get :: 2>/dev/null");
-        $szIpv6DefaultDev = null;
-        if (preg_match('/ dev ([^\s]+) /', $szIpv6DefaultRoute, $aMatchDefault)) {
-            $szIpv6DefaultDev = $aMatchDefault[1];
-        }
+        $oDefaultRouteIpv6 = MiscNet::GetDefaultRouteIpv6();
 
         if ($bValue) {
             MiscNet::IptablesInitBranch(false, "nat", "POSTROUTING", "VVTS_POSTROUTING_MASQ");
@@ -522,8 +550,8 @@ class MiscNet implements IUnblockable, IScriptOpaque {
 
             MiscNet::IptablesInitBranch(true, "nat", "POSTROUTING", "VVTS_POSTROUTING_MASQ");
             MiscNet::IptablesInitBranch(true, "filter", "FORWARD", "VVTS_FORWARD_DEFAULT");
-            if ($szIpv6DefaultDev !== null) {
-                shell_exec("ip6tables -t nat -A VVTS_POSTROUTING_MASQ -o " . escapeshellarg($szIpv6DefaultDev) . " -j MASQUERADE");
+            if ($oDefaultRouteIpv6 !== null) {
+                shell_exec("ip6tables -t nat -A VVTS_POSTROUTING_MASQ -o " . escapeshellarg($oDefaultRouteIpv6->szDev) . " -j MASQUERADE");
 
                 if(!$bIpv6ForwardEnabled) {
                     @file_put_contents("/proc/sys/net/ipv6/conf/all/forwarding", "1");
@@ -532,8 +560,8 @@ class MiscNet implements IUnblockable, IScriptOpaque {
                     }
                 }
 
-                shell_exec("ip6tables -A VVTS_FORWARD_DEFAULT -o " . escapeshellarg($szIpv6DefaultDev) . " -j ACCEPT");
-                shell_exec("ip6tables -A VVTS_FORWARD_DEFAULT -i " . escapeshellarg($szIpv6DefaultDev) . " -j ACCEPT");
+                shell_exec("ip6tables -A VVTS_FORWARD_DEFAULT -o " . escapeshellarg($oDefaultRouteIpv6->szDev) . " -j ACCEPT");
+                shell_exec("ip6tables -A VVTS_FORWARD_DEFAULT -i " . escapeshellarg($oDefaultRouteIpv6->szDev) . " -j ACCEPT");
             }
         } else {
             MiscNet::IptablesDeinitBranch(false, "nat", "POSTROUTING", "VVTS_POSTROUTING_MASQ");

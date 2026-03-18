@@ -58,7 +58,6 @@ class DhcpServer extends Subscribable implements IUnblockable {
         }
 
         if (preg_match('/sending ACK to ([0-9\.]+)/', $abBuf, $aMatchAck)) {
-            // $dwAddr = MiscNet::Ipv4StringToDword($aMatchAck[1]);
             $this->Signal("dhcp4_client_connected", $aMatchAck[1]);
         }
     }
@@ -145,7 +144,11 @@ class DhcpServer extends Subscribable implements IUnblockable {
         if ($this->dwDns != null) {
             $szConfig .= "opt dns " . MiscNet::DwordToIpv4String($this->dwDns) . "\n";
         }
-        $szConfig .= "opt subnet " . MiscNet::DwordToIpv4String($oInterfaceInfo->dwNetmask) . "\n";
+        if ($this->dwNetmask != null) {
+            $szConfig .= "opt subnet " . MiscNet::DwordToIpv4String($this->dwNetmask) . "\n";
+        } else {
+            $szConfig .= "opt subnet " . MiscNet::DwordToIpv4String($oInterfaceInfo->dwNetmask) . "\n";
+        }
         if ($this->dwRouter != null) {
             $szConfig .= "opt router " . MiscNet::DwordToIpv4String($this->dwRouter) . "\n";
         }
@@ -172,7 +175,7 @@ class DhcpServer extends Subscribable implements IUnblockable {
         if ($this->szDomain !== null) {
             $szConfig .= "opt domain " . $this->szDomain . "\n";
         }
-        $szConfig .= "opt lease " . ($this->dwLeaseTime === null) ? "864000" : strval($this->dwLeaseTime) . "\n";
+        $szConfig .= "opt lease " . (($this->dwLeaseTime === null) ? "864000" : strval($this->dwLeaseTime)) . "\n";
 
         $aSpec = [
             0 => ["file", "/dev/null", "r"],

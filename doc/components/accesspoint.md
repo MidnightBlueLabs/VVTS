@@ -20,7 +20,7 @@ Clears the list of DHCP4 classless static routes to be provided by the DHCP4 ser
 Causes changes in the object's properties pertaining to the DHCP4 server to be adopted.
 
 ### `dhcp4_renew(state_renew)`
-Causes a state transition to `state_renew` to occur when a DHCP4 lease is created or renewed for a client.
+Causes a state transition to `state_renew` to occur when a DHCP4 lease is created or renewed for a client. When entering that state, the `renew_addr` variable will be a string consisting of the address of said client.
 
 ### `slaac_static_route(ip6_addr, prefixlen)`
 Similar to `dhcp4_static_route()`, instructs the SLAAC advertiser to advertise that IPv6 subnet `ip_addr` with prefix length `prefixlen` is to be routed through us (a gateway cannot be specified as routes can only be advertised on one's own behalf in SLAAC). `ip_addr` is a string containing an IPv6 address, `prefixlen` is a string containing the number `0` up to `128`. Changes take effect after invoking `bring_up()` or `slaac_reload()` on the object.
@@ -32,13 +32,16 @@ Similar to `dhcp4_clear_static_routes()`, clears the list of SLAAC routes to be 
 Similar to `dhcp4_reload()`, causes changes in the object's properties pertaining to the SLAAC advertiser to be adopted.
 
 ### `slaac_renew(state_renew)`
-Similar to `dhcp4_renew()`, causes a state transition to `state_renew` to occur when a SLAAC advertisement performed.
+Similar to `dhcp4_renew()`, causes a state transition to `state_renew` to occur when a SLAAC neighbor advertisement is received. When entering that state, the `renew_addr` variable will be a string consisting of the address of the sender.
 
 ### `nat64_reload()`
 Causes changes in the object's properties pertaining to NAT64 to be adopted.
 
 ### `dns_set_override(domain_name, ip_addr)`
 Instructs the DNS mitm framework to spoof DNS results for `domain_name` to ip address `ip_addr`. `domain_name` is a string containing a domain name, whereas `ip_addr` is a string containing either an IPv4 or IPv6 address. Changes take effect immediately.
+
+### `deauth(ip_addr)`
+Forces the client with address `ip_addr` to de-authenticate -- i.e. disconnect. Usually causes the client to reconnect immediately.
 
 ## Writable properties
 

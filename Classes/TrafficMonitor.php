@@ -45,6 +45,7 @@ class TrafficMonitor implements IUnblockable, IScriptOpaque {
     var $dwMonitorState;
     var $bEndpointTrafficDetected;
     var $bDirectTrafficDetected;
+    var $dwDelayTime;
 
     function __construct() {
         $this->aMonitorAddresses = [];
@@ -67,12 +68,20 @@ class TrafficMonitor implements IUnblockable, IScriptOpaque {
         return $aStreams;
     }
 
-    function PerformTransition($szWhich) {
+    function EnterStateDelayHelper($oTransition) {
+        ScriptEngine::GetInstance()->EnterState($oTransition);
+    }
+
+    function PerformTransition($szWhich, $dwDelayTime = null) {
         if (isset($this->aTransitions[$szWhich])) {
             $oTransition = $this->aTransitions[$szWhich];
             $this->aTransitions = [];
             $this->Teardown();
-            ScriptEngine::GetInstance()->EnterState($oTransition);
+            if ($dwDelayTime === null) {
+                ScriptEngine::GetInstance()->EnterState($oTransition);
+            } else {
+                MainLoop::GetInstance()->RegisterTimer($this, "EnterStateDelayHelper", $oTransition, $dwDelayTime);
+            }
         }
     }
 
@@ -218,7 +227,7 @@ _process_exit:
                             );
                         }
                         $this->bEndpointTrafficDetected = true;
-                        $this->PerformTransition("vpn_detected");
+                        $this->PerformTransition("vpn_detected", $this->dwDelayTime);
                         break;
                     }
                 }
@@ -483,19 +492,24 @@ _no_results:
     }
 
     function StateMachineInvoke_detect_vpn(...$aArguments) {
-        if (count($aArguments) != 2) {
+        if (count($aArguments) != 2 && count($aArguments) != 3) {
             throw new ScriptInvokeError("detect_vpn requires two arguments");
         } else if (!($aArguments[0] instanceof ScriptState) || !($aArguments[1] instanceof ScriptState)) {
             throw new ScriptInvokeError("detect_vpn requires a vpn_detected and an error state as parameters, respectively");
+        } else if (count($aArguments) == 3 && !($aArguments[2] instanceof ScriptStringLiteral)) {
+            throw new ScriptInvokeError("timeout argument must be of type string");
         } else if ($this->szInterface === null) {
             throw new ScriptInvokeError("Please set interface before invoking detect_vpn()");
         } else if (!is_array($this->aVpnEndpoints) || count($this->aVpnEndpoints) == 0) {
             throw new ScriptInvokeError("Please set vpn_endpoints before invoking detect_vpn()");
         }
 
-        list ($oDetectedState, $oErrorState) = $aArguments;
+        $oDetectedState = $aArguments[0];
+        $oErrorState = $aArguments[1];
+        $dwDelayTime = isset($aArguments[2]) ? intval($aArguments[2]->szLiteral) : null;
         $this->aTransitions["vpn_detected"] = ScriptEngine::GetInstance()->RegisterStateTransition($oDetectedState);
         $this->aTransitions["error"] = ScriptEngine::GetInstance()->RegisterStateTransition($oErrorState);
+        $this->dwDelayTime = $dwDelayTime;
 
         $this->InitMonitorProcess();
         return new ScriptVoid();
@@ -503,13 +517,13 @@ _no_results:
 
     function StateMachineInvoke_detect_attack(...$aArguments) {
         if (count($aArguments) != 3) {
-            throw new ScriptInvokeError("bring_up requires three arguments");
+            throw new ScriptInvokeError("detect_attack requires three arguments");
         } else if (!($aArguments[0] instanceof ScriptState) || !($aArguments[1] instanceof ScriptState) || !($aArguments[2] instanceof ScriptState)) {
-            throw new ScriptInvokeError("bring_up requires a safe, vulnerable and error state as parameters, respectively");
+            throw new ScriptInvokeError("detect_attack requires a safe, vulnerable and error state as parameters, respectively");
         } else if ($this->szInterface === null) {
-            throw new ScriptInvokeError("Please set interface before invoking bring_up()");
+            throw new ScriptInvokeError("Please set interface before invoking detect_attack()");
         } else if (!is_array($this->aMonitorAddresses) || count($this->aMonitorAddresses) == 0) {
-            throw new ScriptInvokeError("Please set validation_server before invoking bring_up()");
+            throw new ScriptInvokeError("Please set validation_server before invoking detect_attack()");
         }
 
         list ($oSafeState, $oVulnerableState, $oErrorState) = $aArguments;

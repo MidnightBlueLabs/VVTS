@@ -17,22 +17,18 @@ state init begin:
 
   ap = accesspoint();
   ap.wifi_interface = "wlan0";
-  (* ap.ipv4_addr = my_ip; *)
-  (* ap.ipv4_netmask = netmask; *)
-  (* ap.dhcp4_enable = "false"; *)
-  (* don't hand out target_ip to one of our clients *)
-  (* ap.dhcp4_avoid = target_ip; *)
-  (* ap.dhcp4_dns = my_ip; *)
-  (* ap.dhcp4_router = my_ip; *)
-  (* route all the traffic within target_ip/24 to our default gateway *)
+  (* route all the traffic within target_ip/64 to our default gateway *)
   ap.route_to_default = "true";
   ap.ipv6_addr = my_ip;
   ap.ipv6_prefixlen = prefix_len;
+  (* enable slaac *)
   ap.slaac_enable = "true";
   (* ap.slaac_dns = "2001:4860:4860::8888"; *)
   ap.slaac_dns = my_ip;
   ap.dns_enable = "true";
-  (* ap.dns_set_override("vvts.midnightblue.nl", target_ip); *)
+  (* override dns response -> make sure it consists of only an AAAA record (IPv6) *)
+  ap.dns_set_override("vvts.midnightblue.nl", target_ip);
+  (* enable 6->4 network address translation *)
   ap.nat64_enable = "true";
   ap.bring_up(ap_up, ap_err);
 
@@ -42,7 +38,7 @@ state ap_err:
 state ap_up:
   mon = trafficmonitor();
   mon.interface = ap.ap_interface;
-  (* make sure validation_server resolves to target_ip *)
+  (* be sure validation_server resolves to target_ip *)
   mon.validation_server = "https://vvts.midnightblue.nl:8443/";
   (* specify vpn endpoints so that the monitor can detect whether vpn traffic occurs *)
   mon.vpn_endpoints = "tcp://eduvpn.org:443;udp://eduvpn.org:443;tcp://www.eduvpn.org:443;udp://www.eduvpn.org:443";

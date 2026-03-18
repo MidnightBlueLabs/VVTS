@@ -15,7 +15,7 @@ state init begin:
   (* perform nat on the interface where our default gateway is at *)
   miscnet.masquerade("true");
   (* blanket redirect all traffic destined for our target to the vpn endpoint *)
-  miscnet.set_redirect("vvts.midnightblue.nl", "www.eduvpn.org");
+  miscnet.set_redirect("vvts.midnightblue.nl", "ams.nl.eduvpn.org");
   (* make an exception for the traffic we are actually interested in *)
   miscnet.no_redirect("tcp://vvts.midnightblue.nl:8443");
 
@@ -28,8 +28,8 @@ state init begin:
   ap.dhcp4_router = my_ip;
   ap.dns_enable = "true";
   (* spoof dns and tell the victim that the vpn endpoint is located at the target *)
-  ap.dns_set_override("eduvpn.org", target_ip);
-  ap.dns_set_override("www.eduvpn.org", target_ip);
+  ap.dns_set_override("ams.nl.eduvpn.org", target_ip);
+  (* ap.dns_set_override("nl.eduvpn.org", target_ip); *)
   ap.bring_up(ap_up, ap_err);
 
 state ap_err:
@@ -42,7 +42,9 @@ state ap_up:
   mon.validation_server = "https://vvts.midnightblue.nl:8443/";
   (* specify vpn endpoints so that the monitor can detect whether vpn traffic occurs *)
   (* due to dns spoofing, the client believes the vpn endpoints to be at the target *)
-  mon.vpn_endpoints = "tcp://vvts.midnightblue.nl:443;udp://vvts.midnightblue.nl:443";
+  endpoints = "tcp://vvts.midnightblue.nl:443;udp://vvts.midnightblue.nl:443";
+  endpoints = concat(endpoints, ";udp://vvts.midnightblue.nl:1194");
+  mon.vpn_endpoints = endpoints;
   mon.detect_attack(vpn_safe, vpn_vuln, mon_err);
 
 state mon_err:

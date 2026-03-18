@@ -318,6 +318,10 @@ _done_write:
     function SetErrstr($szErrstr) {
         $this->aVariables["errstr"] = new ScriptStringLiteral($szErrstr);
     }
+
+    function SetString($szName, $szValue) {
+        $this->aVariables[$szName] = new ScriptStringLiteral($szValue);
+    }
 }
 
 ?>

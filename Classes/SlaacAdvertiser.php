@@ -56,8 +56,9 @@ class SlaacAdvertiser extends Subscribable implements IUnblockable {
             $this->Signal("slaac_up");
         }
 
-        if (strpos($abBuf, "processed an RS") !== false) {
-            $this->Signal("slaac_renew");
+        // if (strpos($abBuf, "processed an RS") !== false) {
+        if (preg_match('/received NA from: ([0-9a-f:]+)$/', $abBuf, $aMatchNa)) {
+            $this->Signal("slaac_renew", $aMatchNa[1]);
         }
     }
 
