@@ -45,10 +45,10 @@ class ArpResponder extends Subscribable implements IUnblockable {
         }
 
         /* regexes below only match real neighbor advertisement/arp responses, not spoofed ones */
-        if (preg_match('/^Neighbor Advertisement ([0-9a-f:]+) is at [0-9a-f:]+\s*$/m', $abBuf, $aMatchNeigh)) {
-            $this->Signal("peer_is_up", $aMatchNeigh[1]);
-        } else if (preg_match('/([0-9\.]+) is at ([0-9a-f:]+)\s*$/m', $abBuf, $aMatchArp)) {
-            $this->Signal("peer_is_up", $aMatchArp[1]);
+        if (preg_match('/^Neighbor Advertisement ([0-9a-f:]+) is at [0-9a-f:]+\s*(\(spoofed\))?$/m', $abBuf, $aMatchNeigh)) {
+            $this->Signal(empty($aMatchNeigh[2]) ? "peer_is_up" : "peer_spoofed", $aMatchNeigh[1]);
+        } else if (preg_match('/([0-9\.]+) is at ([0-9a-f:]+)\s*(\(spoofed\))?$/m', $abBuf, $aMatchArp)) {
+            $this->Signal(empty($aMatchArp[2]) ? "peer_is_up" : "peer_spoofed", $aMatchArp[1]);
         }
     }
 

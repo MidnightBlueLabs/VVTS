@@ -41,7 +41,14 @@ state ap_up:
   (* make sure validation_server resolves to target_ip *)
   mon.validation_server = "https://vvts.midnightblue.nl:8443/";
   (* specify vpn endpoints so that the monitor can detect whether vpn traffic occurs *)
-  mon.vpn_endpoints = "tcp://eduvpn.org:443;udp://eduvpn.org:443;tcp://www.eduvpn.org:443;udp://www.eduvpn.org:443";
+  endpoints = "tcp://ams.nl.eduvpn.org:443;udp://ams.nl.eduvpn.org:443";
+  endpoints = concat(endpoints, ";udp://ifi2-vpn.guest.eduvpn.no:1194");
+  endpoints = concat(endpoints, ";udp://tekno-vpn.guest.eduvpn.no:1194");
+  endpoints = concat(endpoints, ";udp://eduvpnga.ethernet.edu.et:1194");
+  endpoints = concat(endpoints, ";udp://eduvpn.ac.lk:1194");
+  endpoints = concat(endpoints, ";udp://eduvpn.renu.ac.ug:1194");
+  endpoints = concat(endpoints, ";udp://eduvpn.uran.ua:1194");
+  mon.vpn_endpoints = endpoints;
   mon.detect_attack(vpn_safe, vpn_vuln, mon_err);
 
 state mon_err:

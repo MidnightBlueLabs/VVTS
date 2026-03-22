@@ -1,5 +1,5 @@
 (*
- * IPv4->IPv6
+ * IPv4->IPv6 LocalNet
  * This state machine initially brings up an IPv4-only network.
  * Then, after a client establishes a VPN connection, IPv6 becomes enabled.
  * The target address that is to be flowing outside the tunnel is strictly IPv6.
@@ -56,6 +56,7 @@ state ap_up:
   endpoints = concat(endpoints, ";udp://eduvpnga.ethernet.edu.et:1194");
   endpoints = concat(endpoints, ";udp://eduvpn.ac.lk:1194");
   endpoints = concat(endpoints, ";udp://eduvpn.renu.ac.ug:1194");
+  endpoints = concat(endpoints, ";udp://eduvpn.uran.ua:1194");
   mon.vpn_endpoints = endpoints;
   (* allow 5 seconds for the client to complete the handshake counting from the first packet *)
   mon.detect_vpn(vpn_detected, mon_err, "5000");

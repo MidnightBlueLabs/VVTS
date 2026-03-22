@@ -3,13 +3,14 @@
  * Our target falls within the local subnet range.
  * i.e. the IP addresses we hand out are within a public range.
  * We abuse the fact that most vpn clients allow local subnet traffic to flow directly.
+ * This is the IPv6 version.
  *)
 
 state init begin:
   miscnet = miscnet();
   prefix_len = "64";
   (* we want target_ip to flow outside of the tunnel *)
-  target_ip = "2a00:1338:1:1:291:9eff:fe3c:325c";
+  target_ip = miscnet.lookup_ipv6("v6.phphooligans.nl");
   (* select an ip within the same subnet but not equal to target_ip *)
   my_ip = miscnet.subnet_ipv6(target_ip, prefix_len);
   (* perform nat on the interface where our default gateway is at *)
@@ -27,7 +28,7 @@ state init begin:
   ap.slaac_dns = my_ip;
   ap.dns_enable = "true";
   (* override dns response -> make sure it consists of only an AAAA record (IPv6) *)
-  ap.dns_set_override("vvts.midnightblue.nl", target_ip);
+  ap.dns_set_override("v6.phphooligans.nl", target_ip);
   (* enable 6->4 network address translation *)
   ap.nat64_enable = "true";
   ap.bring_up(ap_up, ap_err);
@@ -39,9 +40,16 @@ state ap_up:
   mon = trafficmonitor();
   mon.interface = ap.ap_interface;
   (* be sure validation_server resolves to target_ip *)
-  mon.validation_server = "https://vvts.midnightblue.nl:8443/";
+  mon.validation_server = "https://v6.phphooligans.nl:8443/";
   (* specify vpn endpoints so that the monitor can detect whether vpn traffic occurs *)
-  mon.vpn_endpoints = "tcp://eduvpn.org:443;udp://eduvpn.org:443;tcp://www.eduvpn.org:443;udp://www.eduvpn.org:443";
+  endpoints = "tcp://ams.nl.eduvpn.org:443;udp://ams.nl.eduvpn.org:443";
+  endpoints = concat(endpoints, ";udp://ifi2-vpn.guest.eduvpn.no:1194");
+  endpoints = concat(endpoints, ";udp://tekno-vpn.guest.eduvpn.no:1194");
+  endpoints = concat(endpoints, ";udp://eduvpnga.ethernet.edu.et:1194");
+  endpoints = concat(endpoints, ";udp://eduvpn.ac.lk:1194");
+  endpoints = concat(endpoints, ";udp://eduvpn.renu.ac.ug:1194");
+  endpoints = concat(endpoints, ";udp://eduvpn.uran.ua:1194");
+  mon.vpn_endpoints = endpoints;
   mon.detect_attack(vpn_safe, vpn_vuln, mon_err);
 
 state mon_err:

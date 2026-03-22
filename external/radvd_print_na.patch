@@ -1,6 +1,6 @@
 diff -rupN a/process.c b/process.c
 --- a/process.c	2024-12-30 18:38:47.000000000 +0100
-+++ b/process.c	2026-03-11 15:27:28.893915625 +0100
++++ b/process.c	2026-03-21 23:46:06.980288409 +0100
 @@ -50,7 +50,7 @@ void process(int sock, struct Interface
  
  	struct icmp6_hdr *icmph = (struct icmp6_hdr *)msg;
@@ -25,7 +25,7 @@ diff -rupN a/process.c b/process.c
  	if (icmph->icmp6_code != 0) {
  		flog(LOG_WARNING, "%s received icmpv6 RS/RA packet with invalid code (%d) from %s", if_name, icmph->icmp6_code,
  		     addr_str);
-@@ -117,6 +125,12 @@ void process(int sock, struct Interface
+@@ -117,6 +125,13 @@ void process(int sock, struct Interface
  			dlog(LOG_DEBUG, 3, "%s received RA from: %s", if_name, addr_str);
  		}
  		process_ra(iface, msg, len, addr);
@@ -33,6 +33,7 @@ diff -rupN a/process.c b/process.c
 +		if (0 == memcmp(&addr->sin6_addr, &iface->props.if_addr, sizeof(iface->props.if_addr))) {
 +			dlog(LOG_DEBUG, 3, "%s received NA from: %s (myself)", if_name, addr_str);
 +		} else {
++			addrtostr((void *)(msg + 8), addr_str, sizeof(addr_str));
 +			dlog(LOG_DEBUG, 3, "%s received NA from: %s", if_name, addr_str);
 +		}
  	}
@@ -40,7 +41,7 @@ diff -rupN a/process.c b/process.c
  
 diff -rupN a/socket.c b/socket.c
 --- a/socket.c	2024-12-28 06:27:47.000000000 +0100
-+++ b/socket.c	2026-03-11 15:23:09.228013236 +0100
++++ b/socket.c	2026-03-11 19:01:00.862954926 +0100
 @@ -87,6 +87,7 @@ int open_icmpv6_socket(void)
  	ICMP6_FILTER_SETBLOCKALL(&filter);
  	ICMP6_FILTER_SETPASS(ND_ROUTER_SOLICIT, &filter);

@@ -404,7 +404,7 @@ _skip:
                     array_push($this->aVpnEndpoints, $oEndpointResolved);
                 }
             } else {
-                throw new ScriptInvokeError("could not resolve address " . $this->oEndpoint->szHostname);
+                throw new ScriptInvokeError("could not resolve address " . $oEndpoint->szHostname);
             }
         }
     }

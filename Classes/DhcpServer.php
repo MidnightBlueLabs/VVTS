@@ -128,8 +128,9 @@ class DhcpServer extends Subscribable implements IUnblockable {
             return;
         }
 
-        $dwSubnet = $oInterfaceInfo->dwIpAddr & $oInterfaceInfo->dwNetmask;
-        $dwBroadcast = ($dwSubnet | ~$oInterfaceInfo->dwNetmask) & 0xffffffff;
+        $dwNetmask = $this->dwNetmask != null ? $this->dwNetmask : $oInterfaceInfo->dwNetmask;
+        $dwSubnet = $oInterfaceInfo->dwIpAddr & $dwNetmask;
+        $dwBroadcast = ($dwSubnet | ~$dwNetmask) & 0xffffffff;
 
         $aInterval = [$dwSubnet+1, $dwBroadcast-1];
         self::EliminateFromInterval($aInterval, $oInterfaceInfo->dwIpAddr);
