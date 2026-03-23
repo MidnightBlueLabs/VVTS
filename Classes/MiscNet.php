@@ -721,7 +721,7 @@ _return:
         }
 
         if ($szIpv6Target === null && $szIpv4Target !== null) {
-            $szIpv6Target = MiscNet::Ipv4ToNat64(MiscNet::Ipv4StringToDword($szIpv4Target));
+            $szIpv6Target = MiscNet::BinaryToIPv6String(MiscNet::Ipv4ToNat64(MiscNet::Ipv4StringToDword($szIpv4Target)));
         }
 
         if (!(
