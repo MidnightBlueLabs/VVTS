@@ -53,6 +53,8 @@ class HostApd extends Subscribable implements IUnblockable {
         );
         /* tell NetworkManager to leave this interface alone */
         shell_exec("nmcli device set " . escapeshellarg($this->szApInterface) . " managed no 2>/dev/null");
+        /* avoid race condition where both the kernel and vvts assign link-local address */
+        shell_exec("ip link set dev " . escapeshellarg($this->szApInterface) . " addrgenmode none");
 
         $szDriver = ($this->szDriver === null) ? "nl80211" : $this->szDriver;
         $szSsid = ($this->szSsid === null) ? "Free WiFi😍" : $this->szSsid;
