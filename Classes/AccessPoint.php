@@ -604,7 +604,7 @@ _error:
         if ($oValue->szLiteral === "") {
             $this->szWifiPassphrase = null;
         } else {
-            $this->szWifiPhassphrase = $oValue->szLiteral;
+            $this->szWifiPassphrase = $oValue->szLiteral;
         }
     }
 
